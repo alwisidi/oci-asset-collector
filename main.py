@@ -14,9 +14,7 @@ LOG.addHandler(log_handler)
 def oci_command(command):
   return json.loads(subprocess.run(command.split(), capture_output=True, text=True).stdout)
 
-# availability_domain = 'tQfq:ME-JEDDAH-1-AD-1'
 def get_resource(rsc_type, values = []):
-  # global availability_domain
   query = 'network vcn list' if rsc_type == 'VCN' else (
     'network subnet list' if rsc_type == 'Subnet' else (
       'network nsg list' if rsc_type == 'NSG' else (
