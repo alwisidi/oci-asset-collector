@@ -21,10 +21,14 @@ def get_resource(rsc_type, values = []):
         'compute instance list' if rsc_type == 'Instance' else (
           'bv boot-volume list' if rsc_type == 'Boot Volume' else (
             'compute boot-volume-attachment list' if rsc_type == 'Boot Volume Attachment' else (
-              'compute image list' if rsc_type == 'Image' else (
-                'compute image get' if rsc_type == 'ImageById' else (
-                  'compute instance list-vnics' if rsc_type == 'VNIC' else (
-                    'compute vnic-attachment list' if rsc_type == 'VNIC-Attachment' else rsc_type
+              'bv volume list' if rsc_type == 'Block Volume' else (
+                'compute volume-attachment list' if rsc_type == 'Block Volume Attachment' else (
+                  'compute image list' if rsc_type == 'Image' else (
+                    'compute image get' if rsc_type == 'ImageById' else (
+                      'compute instance list-vnics' if rsc_type == 'VNIC' else (
+                        'compute vnic-attachment list' if rsc_type == 'VNIC-Attachment' else rsc_type
+                      )
+                    )
                   )
                 )
               )
@@ -40,7 +44,7 @@ def get_resource(rsc_type, values = []):
     return oci_command(f"oci {query} --image-id {values}")['data']
   for compartment in OCI.compartments:
     try:
-      if rsc_type == "Boot Volume Attachment":
+      if rsc_type == "Boot Volume Attachment" or rsc_type == "Block Volume Attachment":
         availability_domains = [domain['name'] for domain in oci_command(f"oci iam availability-domain list --compartment-id {compartment['id']} --all")['data']]
         for domain in availability_domains:
           values = [*values, *oci_command(f"oci {query} --availability-domain {domain} --compartment-id {compartment['id']} --all")['data']]
@@ -89,6 +93,13 @@ def get_value(unique, data_lists, instance_details, matched_values, dest_selecto
   except Exception as e:
     LOG.error(f"❗ [[ {instance_details['display-name']} ]] -> {called_prop} -> {e}")
     return None
+
+def get_sum(list):
+  try:
+    return sum(list)
+  except Exception as e:
+    LOG.error(f"❗no values in [{list}] to perform sum -> {e}")
+    return list
 
 def aggregator():
   OCI.combined = [{
@@ -186,8 +197,22 @@ def aggregator():
       ['boot-volume-id', 'size-in-gbs']
     ),
     # 'boot_volume_backup_policy'   : '',
-    # 'block_volumes'               : '',
-    # 'block_volumes_total_gb'      : '',
+    'block_volumes'                 : get_value(
+      False,
+      [OCI.block_volume_attachments, OCI.block_volumes],
+      instance,
+      instance['id'],
+      ['instance-id', 'id'],
+      ['volume-id', 'display-name']
+    ),
+    'block_volumes_total_gb'         : get_sum(get_value(
+      False,
+      [OCI.block_volume_attachments, OCI.block_volumes],
+      instance,
+      instance['id'],
+      ['instance-id', 'id'],
+      ['volume-id', 'size-in-gbs']
+    )),
     # 'block_volumes_backup_policy' : '',
     'freeform_tags'               : instance['freeform-tags'],
     'defined_tags'                : instance['defined-tags'],
@@ -195,7 +220,7 @@ def aggregator():
   } for instance in OCI.instances]
 
 class Asset:
-  def __init__(self, compartments, vcns, subnets, nsgs, instances, boot_volumes, boot_volume_attachments, vnics, vnic_attachments, images, combined):
+  def __init__(self, compartments, vcns, subnets, nsgs, instances, boot_volumes, boot_volume_attachments, block_volumes, block_volume_attachments, vnics, vnic_attachments, images, combined):
     self.compartments             = compartments
     self.vcns                     = vcns
     self.subnets                  = subnets
@@ -203,6 +228,8 @@ class Asset:
     self.instances                = instances
     self.boot_volumes             = boot_volumes
     self.boot_volume_attachments  = boot_volume_attachments
+    self.block_volumes             = block_volumes
+    self.block_volume_attachments  = block_volume_attachments
     self.vnics                    = vnics
     self.vnic_attachments         = vnic_attachments
     self.images                   = images
@@ -216,12 +243,14 @@ class Asset:
       "instances"               : self.instances,
       "boot_volumes"            : self.boot_volumes,
       "boot_volume_attachments" : self.boot_volume_attachments,
+      "block_volumes"            : self.block_volumes,
+      "block_volume_attachments" : self.block_volume_attachments,
       "vnics"                   : self.vnics,
       "vnic_attachments"        : self.vnic_attachments,
       "images"                  : self.images,
       "combined"                : self.combined
     }
-OCI = Asset([], [], [], [], [], [], [], [], [], [], [])
+OCI = Asset([], [], [], [], [], [], [], [], [], [], [], [], [])
 
 def main(mode = None):
   if mode == "local":
@@ -237,6 +266,8 @@ def main(mode = None):
         OCI.instances               = data['instances']
         OCI.boot_volumes            = data['boot_volumes']
         OCI.boot_volume_attachments = data['boot_volume_attachments']
+        OCI.block_volumes            = data['block_volumes']
+        OCI.block_volume_attachments = data['block_volume_attachments']
         OCI.images                  = data['images']
         OCI.vnics                   = data['vnics']
         OCI.vnic_attachments        = data['vnic_attachments']
@@ -256,6 +287,8 @@ def main(mode = None):
     OCI.instances               = get_resource("Instance")
     OCI.boot_volumes            = get_resource('Boot Volume')
     OCI.boot_volume_attachments = get_resource('Boot Volume Attachment')
+    OCI.block_volumes            = get_resource('Block Volume')
+    OCI.block_volume_attachments = get_resource('Block Volume Attachment')
     OCI.images                  = get_resource("Image")
     OCI.vnics                   = get_resource("VNIC")
     OCI.vnic_attachments        = get_resource("VNIC-Attachment")
